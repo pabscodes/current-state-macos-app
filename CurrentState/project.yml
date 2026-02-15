@@ -27,6 +27,12 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_CFBundleDisplayName: Current State
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: "Current State uses Claude Code to access your apps (Things 3, Calendar, etc.) for daily briefings."
+        INFOPLIST_KEY_NSCalendarsUsageDescription: "Current State reads your calendar via Claude Code to include upcoming events in briefings."
+        INFOPLIST_KEY_NSRemindersUsageDescription: "Current State accesses reminders via Claude Code for task summaries."
+        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: "Current State may access your Downloads folder via Claude Code when generating briefings."
+        INFOPLIST_KEY_NSDesktopFolderUsageDescription: "Current State may access your Desktop folder via Claude Code when generating briefings."
+        INFOPLIST_KEY_NSDocumentsFolderUsageDescription: "Current State may access your Documents folder via Claude Code when generating briefings."
     entitlements:
       path: Resources/CurrentState.entitlements
       properties:

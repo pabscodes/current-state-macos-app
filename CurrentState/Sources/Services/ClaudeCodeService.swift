@@ -1,100 +1,109 @@
 import Foundation
+import os
 
 /// Manages Claude Code subprocess lifecycle and streams parsed events.
 final class ClaudeCodeService: ClaudeCodeServiceProtocol {
 
-    /// Stream events from a Claude Code subprocess.
-    ///
-    /// The returned stream owns the subprocess. When the consumer cancels
-    /// (e.g. by dropping the `for await` loop), the subprocess is terminated.
+    private static let logger = Logger(subsystem: "com.pabscodes.currentstate", category: "ClaudeCodeService")
+
     func stream(prompt: String, sessionId: String?) -> AsyncThrowingStream<StreamEvent, Error> {
-        // Thread-safe box so the onTermination handler can reach the process
-        // created inside the detached task.
         let processBox = ProcessBox()
 
         return AsyncThrowingStream { continuation in
-            let task = Task.detached { [self] in
-                do {
-                    let executablePath = try self.resolvedClaudePath()
-                    let args = self.buildArgs(prompt: prompt, sessionId: sessionId)
+            do {
+                let executablePath = try self.resolvedClaudePath()
+                let args = self.buildArgs(prompt: prompt, sessionId: sessionId)
 
-                    let process = Process()
-                    process.executableURL = URL(fileURLWithPath: executablePath)
-                    process.arguments = args
+                Self.logger.info("Launching: \(executablePath) \(args.joined(separator: " "), privacy: .private)")
 
-                    // Unset CLAUDECODE env var to prevent "nested session" error
-                    var env = ProcessInfo.processInfo.environment
-                    env.removeValue(forKey: "CLAUDECODE")
-                    process.environment = env
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: executablePath)
+                process.arguments = args
+                process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                process.standardInput = FileHandle.nullDevice
 
-                    let stdout = Pipe()
-                    let stderr = Pipe()
-                    process.standardOutput = stdout
-                    process.standardError = stderr
+                // Strip CLAUDECODE env var to prevent "nested session" error
+                var env = ProcessInfo.processInfo.environment
+                env.removeValue(forKey: "CLAUDECODE")
+                process.environment = env
 
-                    // Publish process so onTermination can kill it
-                    processBox.set(process)
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
 
-                    // Ensure cleanup on all exit paths
-                    defer {
-                        if process.isRunning { process.terminate() }
-                    }
+                processBox.set(process)
 
-                    try process.run()
+                // Serial queue ensures readabilityHandler and terminationHandler
+                // never run concurrently — eliminates the race condition.
+                let queue = DispatchQueue(label: "com.pabscodes.currentstate.stream")
+                let lineBuffer = LineBuffer()
+                let newline = UInt8(ascii: "\n")
+                var eofSeen = false
 
-                    let handle = stdout.fileHandleForReading
-                    var buffer = Data()
-                    let newline = UInt8(ascii: "\n")
+                stdout.fileHandleForReading.readabilityHandler = { [lineBuffer] handle in
+                    queue.async {
+                        let chunk = handle.availableData
 
-                    // Blocking read loop — readData(ofLength:) returns empty Data
-                    // only at true EOF (pipe closed), unlike availableData which
-                    // can return empty while the pipe is still open.
-                    while true {
-                        let chunk = handle.readData(ofLength: 65_536)
-                        if chunk.isEmpty { break }
+                        if chunk.isEmpty {
+                            // EOF — pipe closed
+                            eofSeen = true
+                            handle.readabilityHandler = nil
 
-                        try Task.checkCancellation()
+                            let remaining = lineBuffer.flush()
+                            if let line = String(data: remaining, encoding: .utf8), !line.isEmpty {
+                                let event = StreamParser.parse(line: line)
+                                continuation.yield(event)
+                            }
+                            return
+                        }
 
-                        buffer.append(chunk)
+                        lineBuffer.append(chunk)
 
-                        while let newlineIndex = buffer.firstIndex(of: newline) {
-                            let lineData = buffer[buffer.startIndex..<newlineIndex]
-                            buffer = Data(buffer[buffer.index(after: newlineIndex)...])
-
+                        while let lineData = lineBuffer.nextLine(delimiter: newline) {
                             if let line = String(data: lineData, encoding: .utf8), !line.isEmpty {
                                 let event = StreamParser.parse(line: line)
                                 continuation.yield(event)
                             }
                         }
                     }
-
-                    // Flush any remaining partial line
-                    if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8), !line.isEmpty {
-                        let event = StreamParser.parse(line: line)
-                        continuation.yield(event)
-                    }
-
-                    process.waitUntilExit()
-
-                    if process.terminationStatus != 0 && !Task.isCancelled {
-                        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
-                        let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                        throw ClaudeCodeError.processExited(code: process.terminationStatus, message: errorMessage)
-                    }
-
-                    continuation.finish()
-                } catch is CancellationError {
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
                 }
+
+                process.terminationHandler = { proc in
+                    queue.async {
+                        // If EOF wasn't seen yet, flush remaining data
+                        if !eofSeen {
+                            stdout.fileHandleForReading.readabilityHandler = nil
+                            let remaining = lineBuffer.flush()
+                            if let line = String(data: remaining, encoding: .utf8), !line.isEmpty {
+                                let event = StreamParser.parse(line: line)
+                                continuation.yield(event)
+                            }
+                        }
+
+                        if proc.terminationStatus != 0 {
+                            let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+                            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                            Self.logger.error("Process exited with code \(proc.terminationStatus): \(errorMessage, privacy: .private)")
+                            continuation.finish(throwing: ClaudeCodeError.processExited(
+                                code: proc.terminationStatus, message: errorMessage
+                            ))
+                        } else {
+                            Self.logger.info("Process exited normally")
+                            continuation.finish()
+                        }
+                    }
+                }
+
+                try process.run()
+                Self.logger.info("Process started, PID: \(process.processIdentifier)")
+
+            } catch {
+                Self.logger.error("Failed to launch: \(error.localizedDescription)")
+                continuation.finish(throwing: error)
             }
 
-            // Single onTermination: cancel the Swift task (sets flag + interrupts
-            // cooperative checks) AND terminate the subprocess (closes pipe →
-            // unblocks the blocking readData call).
             continuation.onTermination = { @Sendable _ in
-                task.cancel()
                 processBox.terminate()
             }
         }
@@ -110,9 +119,6 @@ final class ClaudeCodeService: ClaudeCodeServiceProtocol {
         return args
     }
 
-    /// Resolve the path to the Claude CLI binary.
-    /// Checks common install locations then falls back to `which`.
-    /// Throws `ClaudeCodeError.binaryNotFound` if the binary cannot be found.
     private func resolvedClaudePath() throws -> String {
         let customPath = UserDefaults.standard.string(forKey: "currentstate.claudePath") ?? ""
         if !customPath.isEmpty, FileManager.default.isExecutableFile(atPath: customPath) {
@@ -154,10 +160,31 @@ final class ClaudeCodeService: ClaudeCodeServiceProtocol {
     }
 }
 
+// MARK: - Line buffer
+
+private final class LineBuffer: @unchecked Sendable {
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        data.append(chunk)
+    }
+
+    func nextLine(delimiter: UInt8) -> Data? {
+        guard let index = data.firstIndex(of: delimiter) else { return nil }
+        let lineData = data[data.startIndex..<index]
+        data = Data(data[data.index(after: index)...])
+        return Data(lineData)
+    }
+
+    func flush() -> Data {
+        let remaining = data
+        data = Data()
+        return remaining
+    }
+}
+
 // MARK: - Thread-safe Process reference
 
-/// Allows the `onTermination` handler (which runs on an arbitrary thread)
-/// to terminate a `Process` that is created inside a `Task.detached` block.
 private final class ProcessBox: @unchecked Sendable {
     private var _process: Process?
     private let lock = NSLock()

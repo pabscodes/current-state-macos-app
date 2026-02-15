@@ -1,7 +1,9 @@
 import SwiftUI
+import os
 
 @MainActor
 final class AppState: ObservableObject {
+    private static let logger = Logger(subsystem: "com.pabscodes.currentstate", category: "AppState")
     @Published var messages: [Message] = []
     @Published var streamingState: StreamingState = .idle
     @Published var currentSessionId: String?
@@ -30,6 +32,7 @@ final class AppState: ObservableObject {
     }
 
     func startNewBriefing() {
+        Self.logger.info("startNewBriefing called")
         currentTask?.cancel()
         messages = []
         currentSessionId = nil
@@ -37,9 +40,12 @@ final class AppState: ObservableObject {
         streamingState = .loading
 
         let skill = UserDefaults.standard.string(forKey: "currentstate.startupSkill") ?? "/currentstate"
+        Self.logger.info("Using skill: \(skill)")
 
         currentTask = Task {
+            Self.logger.info("Task started, calling sendToClaudeCode")
             await sendToClaudeCode(prompt: skill, isNewSession: true)
+            Self.logger.info("sendToClaudeCode returned")
         }
     }
 
@@ -70,13 +76,16 @@ final class AppState: ObservableObject {
         let sessionId = isNewSession ? nil : currentSessionId
 
         do {
+            Self.logger.info("Starting stream for prompt: \(prompt, privacy: .private)")
             for try await event in claudeService.stream(prompt: prompt, sessionId: sessionId) {
                 switch event {
                 case .init_(let initEvent):
+                    Self.logger.info("Received init event, sessionId: \(initEvent.sessionId)")
                     currentSessionId = initEvent.sessionId
                     sessionStore.save(initEvent.sessionId)
 
                 case .assistantText(let text):
+                    Self.logger.info("Received assistant text (\(text.count) chars)")
                     if streamingState == .loading {
                         streamingState = .streaming
                     }
@@ -84,6 +93,7 @@ final class AppState: ObservableObject {
                     scrollTrigger = UUID()
 
                 case .result(let resultEvent):
+                    Self.logger.info("Received result event, isError: \(resultEvent.isError)")
                     currentSessionId = resultEvent.sessionId
                     sessionStore.save(resultEvent.sessionId)
 
@@ -95,6 +105,7 @@ final class AppState: ObservableObject {
                     }
 
                 case .ignored:
+                    Self.logger.info("Received ignored event")
                     break
                 }
             }
@@ -107,8 +118,9 @@ final class AppState: ObservableObject {
                 }
             }
         } catch is CancellationError {
-            // New task has taken over — don't touch UI state
+            Self.logger.info("Stream cancelled")
         } catch {
+            Self.logger.error("Stream error: \(error.localizedDescription)")
             removeEmptyPartialMessage(at: messageIndex)
             streamingState = .error(actionableMessage(for: error))
         }
