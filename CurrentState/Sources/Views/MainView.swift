@@ -41,12 +41,19 @@ struct MainView: View {
                         }
                     }
                 }
+                .onChange(of: appState.messages.count) {
+                    if let last = appState.messages.last {
+                        withAnimation {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
             }
 
             Divider()
 
             // Input bar
-            InputBar { text in
+            InputBar(placeholder: inputPlaceholder) { text in
                 appState.sendMessage(text)
             }
             .disabled(appState.streamingState == .loading || appState.streamingState == .streaming)
@@ -58,6 +65,16 @@ struct MainView: View {
                 appState.startNewBriefing()
             }
         }
+    }
+
+    private var inputPlaceholder: String {
+        if appState.streamingState == .loading || appState.streamingState == .streaming {
+            return "Generating..."
+        }
+        if appState.messages.contains(where: { $0.role == .assistant && !$0.content.isEmpty }) {
+            return "Ask a follow-up..."
+        }
+        return "Type a message..."
     }
 
     private var header: some View {
