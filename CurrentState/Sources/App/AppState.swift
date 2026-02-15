@@ -5,8 +5,9 @@ final class AppState: ObservableObject {
     @Published var messages: [Message] = []
     @Published var streamingState: StreamingState = .idle
     @Published var currentSessionId: String?
+    @Published var scrollTrigger = UUID()
 
-    private let claudeService = ClaudeCodeService()
+    private let claudeService: any ClaudeCodeServiceProtocol
     private let sessionStore = SessionStore()
     private var currentTask: Task<Void, Never>?
 
@@ -17,9 +18,15 @@ final class AppState: ObservableObject {
         case error(String) // something went wrong
     }
 
-    init() {
-        // Auto-generate briefing on launch
-        startNewBriefing()
+    init(claudeService: any ClaudeCodeServiceProtocol = ClaudeCodeService()) {
+        self.claudeService = claudeService
+    }
+
+    var errorMessage: String? {
+        if case .error(let message) = streamingState {
+            return message
+        }
+        return nil
     }
 
     func startNewBriefing() {
@@ -64,6 +71,7 @@ final class AppState: ObservableObject {
                         streamingState = .streaming
                     }
                     messages[messageIndex].content += text
+                    scrollTrigger = UUID()
 
                 case .result(let resultEvent):
                     currentSessionId = resultEvent.sessionId

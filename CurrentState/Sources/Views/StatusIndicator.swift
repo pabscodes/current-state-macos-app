@@ -26,10 +26,12 @@ struct StatusIndicator: View {
 
     private var label: String {
         switch state {
-        case .idle: "Ready"
-        case .loading: "Working..."
-        case .streaming: "Streaming"
-        case .error: "Error"
+        case .idle: return "Ready"
+        case .loading: return "Working..."
+        case .streaming: return "Streaming"
+        case .error(let message):
+            let truncated = message.prefix(30)
+            return truncated.count < message.count ? "\(truncated)…" : message
         }
     }
 }
