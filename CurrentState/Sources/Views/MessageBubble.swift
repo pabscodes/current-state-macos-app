@@ -1,3 +1,4 @@
+@preconcurrency import MarkdownUI
 import SwiftUI
 
 struct MessageBubble: View {
@@ -24,9 +25,8 @@ struct MessageBubble: View {
     }
 
     private var assistantBubble: some View {
-        // TODO: Replace with proper Markdown rendering
-        // For MVP, using Text with basic formatting
-        Text(message.content)
+        Markdown(message.content)
+            .markdownTheme(.currentState)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
