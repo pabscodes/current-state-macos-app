@@ -56,12 +56,13 @@ struct MainView: View {
             InputBar(placeholder: inputPlaceholder) { text in
                 appState.sendMessage(text)
             }
-            .disabled(appState.streamingState == .loading || appState.streamingState == .streaming)
+            .disabled(appState.streamingState == .loading || appState.streamingState == .streaming || appState.errorMessage != nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
-            if appState.messages.isEmpty && appState.streamingState == .idle {
+            let autoGenerate = UserDefaults.standard.bool(forKey: "currentstate.autoGenerate")
+            if autoGenerate && appState.messages.isEmpty && appState.streamingState == .idle {
                 appState.startNewBriefing()
             }
         }
@@ -92,6 +93,12 @@ struct MainView: View {
             }
             .buttonStyle(.borderless)
             .help("New Briefing (⌘N)")
+
+            SettingsLink {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+            .help("Settings (⌘,)")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

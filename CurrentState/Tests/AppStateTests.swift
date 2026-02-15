@@ -219,4 +219,143 @@ final class AppStateTests: XCTestCase {
         appState.streamingState = .idle
         XCTAssertNil(appState.errorMessage)
     }
+
+    // MARK: - Result isError Handling
+
+    func testResultIsErrorSetsErrorState() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("partial"),
+            .result(.init(sessionId: "s1", fullText: "", isError: true, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        if case .error(let message) = appState.streamingState {
+            XCTAssertTrue(message.contains("error"), "Error message should mention error, got: \(message)")
+        } else {
+            XCTFail("Expected error state, got \(appState.streamingState)")
+        }
+    }
+
+    func testResultIsErrorRemovesEmptyPartialMessage() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .result(.init(sessionId: "s1", fullText: "", isError: true, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        let assistantMessages = appState.messages.filter { $0.role == .assistant }
+        XCTAssertEqual(assistantMessages.count, 0, "Empty assistant message should be removed on isError")
+    }
+
+    func testResultIsErrorKeepsPartialMessageWithContent() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("Some partial content"),
+            .result(.init(sessionId: "s1", fullText: "", isError: true, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        let assistantMessages = appState.messages.filter { $0.role == .assistant }
+        XCTAssertEqual(assistantMessages.count, 1, "Partial message with content should be preserved")
+        XCTAssertEqual(assistantMessages.first?.content, "Some partial content")
+    }
+
+    func testStreamErrorRemovesEmptyPartialMessage() async {
+        let mock = MockClaudeCodeService()
+        mock.errorToThrow = ClaudeCodeError.processExited(code: 1, message: "fail")
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        let assistantMessages = appState.messages.filter { $0.role == .assistant }
+        XCTAssertEqual(assistantMessages.count, 0, "Empty assistant message should be removed on stream error")
+    }
+
+    func testBinaryNotFoundErrorMessage() async {
+        let mock = MockClaudeCodeService()
+        mock.errorToThrow = ClaudeCodeError.binaryNotFound
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        if case .error(let message) = appState.streamingState {
+            XCTAssertTrue(message.contains("Settings"), "Error message should mention Settings, got: \(message)")
+            XCTAssertTrue(message.contains("Claude Code CLI not found"), "Error message should mention CLI not found, got: \(message)")
+        } else {
+            XCTFail("Expected error state, got \(appState.streamingState)")
+        }
+    }
+
+    // MARK: - Clear Conversation
+
+    func testClearConversation() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("Hello"),
+            .result(.init(sessionId: "s1", fullText: "Hello", isError: false, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertFalse(appState.messages.isEmpty)
+        XCTAssertNotNil(appState.currentSessionId)
+
+        appState.clearConversation()
+
+        XCTAssertTrue(appState.messages.isEmpty, "Messages should be empty after clear")
+        XCTAssertNil(appState.currentSessionId, "Session should be nil after clear")
+        XCTAssertEqual(appState.streamingState, .idle, "State should be idle after clear")
+    }
+
+    // MARK: - Custom Startup Skill
+
+    func testStartNewBriefingUsesCustomSkill() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("Custom"),
+            .result(.init(sessionId: "s1", fullText: "Custom", isError: false, durationMs: nil, costUsd: nil)),
+        ]
+
+        UserDefaults.standard.set("/mycustomskill", forKey: "currentstate.startupSkill")
+        defer { UserDefaults.standard.removeObject(forKey: "currentstate.startupSkill") }
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(mock.lastPrompt, "/mycustomskill", "Should use custom startup skill from UserDefaults")
+    }
 }
