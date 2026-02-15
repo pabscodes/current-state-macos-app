@@ -84,6 +84,124 @@ final class AppStateTests: XCTestCase {
         XCTAssertNotEqual(appState.scrollTrigger, initialTrigger, "scrollTrigger should change after streaming text")
     }
 
+    // MARK: - Multi-Turn Conversation
+
+    func testSendMessagePassesSessionId() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsPerCall = [
+            // Call 1: briefing
+            [
+                .init_(.init(sessionId: "s1", model: "claude-opus-4-6")),
+                .assistantText("Briefing"),
+                .result(.init(sessionId: "s1", fullText: "Briefing", isError: false, durationMs: 100, costUsd: 0.01)),
+            ],
+            // Call 2: follow-up
+            [
+                .init_(.init(sessionId: "s1", model: "claude-opus-4-6")),
+                .assistantText("Response"),
+                .result(.init(sessionId: "s1", fullText: "Response", isError: false, durationMs: 50, costUsd: 0.005)),
+            ],
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        appState.sendMessage("follow-up")
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(mock.callCount, 2)
+        XCTAssertEqual(mock.allPrompts, ["/currentstate", "follow-up"])
+        XCTAssertEqual(mock.allSessionIds.count, 2)
+        XCTAssertNil(mock.allSessionIds[0], "First call should have nil sessionId")
+        XCTAssertEqual(mock.allSessionIds[1], "s1", "Second call should pass session ID from init event")
+    }
+
+    func testMultiTurnAccumulatesMessages() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsPerCall = [
+            [
+                .init_(.init(sessionId: "s1", model: "m")),
+                .assistantText("Briefing text"),
+                .result(.init(sessionId: "s1", fullText: "Briefing text", isError: false, durationMs: nil, costUsd: nil)),
+            ],
+            [
+                .init_(.init(sessionId: "s1", model: "m")),
+                .assistantText("Follow-up response"),
+                .result(.init(sessionId: "s1", fullText: "Follow-up response", isError: false, durationMs: nil, costUsd: nil)),
+            ],
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        appState.sendMessage("follow-up question")
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(appState.messages.count, 3, "Should have briefing + user + follow-up response")
+        XCTAssertEqual(appState.messages[0].role, .assistant)
+        XCTAssertEqual(appState.messages[0].content, "Briefing text")
+        XCTAssertEqual(appState.messages[1].role, .user)
+        XCTAssertEqual(appState.messages[1].content, "follow-up question")
+        XCTAssertEqual(appState.messages[2].role, .assistant)
+        XCTAssertEqual(appState.messages[2].content, "Follow-up response")
+    }
+
+    func testNewBriefingClearsConversation() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsPerCall = [
+            [
+                .init_(.init(sessionId: "s1", model: "m")),
+                .assistantText("First briefing"),
+                .result(.init(sessionId: "s1", fullText: "First briefing", isError: false, durationMs: nil, costUsd: nil)),
+            ],
+            [
+                .init_(.init(sessionId: "s1", model: "m")),
+                .assistantText("Response"),
+                .result(.init(sessionId: "s1", fullText: "Response", isError: false, durationMs: nil, costUsd: nil)),
+            ],
+            [
+                .init_(.init(sessionId: "s2", model: "m")),
+                .assistantText("Second briefing"),
+                .result(.init(sessionId: "s2", fullText: "Second briefing", isError: false, durationMs: nil, costUsd: nil)),
+            ],
+        ]
+
+        let appState = AppState(claudeService: mock)
+
+        // First briefing
+        appState.startNewBriefing()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        // Follow-up
+        appState.sendMessage("question")
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(appState.messages.count, 3)
+        XCTAssertEqual(appState.currentSessionId, "s1")
+
+        // New briefing — should clear everything
+        appState.startNewBriefing()
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(appState.messages.count, 1, "New briefing should clear previous messages")
+        XCTAssertEqual(appState.messages[0].role, .assistant)
+        XCTAssertEqual(appState.messages[0].content, "Second briefing")
+        XCTAssertEqual(appState.currentSessionId, "s2", "Session should be new after startNewBriefing")
+    }
+
     // MARK: - Error Message Computed Property
 
     func testErrorMessageComputedProperty() {

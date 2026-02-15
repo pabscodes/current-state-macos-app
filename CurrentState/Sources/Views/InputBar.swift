@@ -1,14 +1,20 @@
 import SwiftUI
 
 struct InputBar: View {
+    let placeholder: String
     let onSend: (String) -> Void
 
     @State private var text = ""
     @FocusState private var isFocused: Bool
 
+    init(placeholder: String = "Type a message...", onSend: @escaping (String) -> Void) {
+        self.placeholder = placeholder
+        self.onSend = onSend
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            TextField("Type a message...", text: $text, axis: .vertical)
+            TextField(placeholder, text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($isFocused)
@@ -34,5 +40,6 @@ struct InputBar: View {
         guard !trimmed.isEmpty else { return }
         onSend(trimmed)
         text = ""
+        isFocused = true
     }
 }
