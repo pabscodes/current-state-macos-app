@@ -114,6 +114,11 @@ final class ClaudeCodeService: ClaudeCodeServiceProtocol {
     /// Checks common install locations then falls back to `which`.
     /// Throws `ClaudeCodeError.binaryNotFound` if the binary cannot be found.
     private func resolvedClaudePath() throws -> String {
+        let customPath = UserDefaults.standard.string(forKey: "currentstate.claudePath") ?? ""
+        if !customPath.isEmpty, FileManager.default.isExecutableFile(atPath: customPath) {
+            return customPath
+        }
+
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "\(home)/.local/bin/claude",

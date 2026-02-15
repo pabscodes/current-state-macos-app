@@ -4,6 +4,13 @@ import SwiftUI
 struct CurrentStateApp: App {
     @StateObject private var appState = AppState()
 
+    init() {
+        UserDefaults.standard.register(defaults: [
+            "currentstate.startupSkill": "/currentstate",
+            "currentstate.autoGenerate": true,
+        ])
+    }
+
     var body: some Scene {
         WindowGroup {
             MainView()
@@ -18,7 +25,23 @@ struct CurrentStateApp: App {
                     appState.startNewBriefing()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+
+                Button("Refresh Briefing") {
+                    appState.startNewBriefing()
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Divider()
+
+                Button("Clear Conversation") {
+                    appState.clearConversation()
+                }
+                .keyboardShortcut("k", modifiers: .command)
             }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 }

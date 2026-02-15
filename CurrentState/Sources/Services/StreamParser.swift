@@ -1,13 +1,17 @@
 import Foundation
+import os
 
 /// Parses newline-delimited JSON from Claude Code's stream-json output.
 struct StreamParser {
+
+    private static let logger = Logger(subsystem: "com.pabscodes.currentstate", category: "StreamParser")
 
     /// Parse a single line of NDJSON into a StreamEvent.
     static func parse(line: String) -> StreamEvent {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else {
+            logger.debug("Dropped non-JSON or untyped line: \(line, privacy: .private)")
             return .ignored
         }
 
@@ -19,6 +23,7 @@ struct StreamParser {
         case "result":
             return parseResult(json)
         default:
+            logger.debug("Ignored event type: \(type, privacy: .public)")
             return .ignored
         }
     }

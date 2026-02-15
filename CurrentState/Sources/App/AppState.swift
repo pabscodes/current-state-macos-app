@@ -36,9 +36,19 @@ final class AppState: ObservableObject {
         sessionStore.clear()
         streamingState = .loading
 
+        let skill = UserDefaults.standard.string(forKey: "currentstate.startupSkill") ?? "/currentstate"
+
         currentTask = Task {
-            await sendToClaudeCode(prompt: "/currentstate", isNewSession: true)
+            await sendToClaudeCode(prompt: skill, isNewSession: true)
         }
+    }
+
+    func clearConversation() {
+        currentTask?.cancel()
+        messages = []
+        currentSessionId = nil
+        sessionStore.clear()
+        streamingState = .idle
     }
 
     func sendMessage(_ text: String) {
@@ -76,20 +86,51 @@ final class AppState: ObservableObject {
                 case .result(let resultEvent):
                     currentSessionId = resultEvent.sessionId
                     sessionStore.save(resultEvent.sessionId)
-                    streamingState = .idle
+
+                    if resultEvent.isError {
+                        removeEmptyPartialMessage(at: messageIndex)
+                        streamingState = .error("Claude returned an error. Check your prompt and try again.")
+                    } else {
+                        streamingState = .idle
+                    }
 
                 case .ignored:
                     break
                 }
             }
 
-            if streamingState != .idle {
-                streamingState = .idle
+            if streamingState != .idle && streamingState != .error("") {
+                if case .error = streamingState {
+                    // Already in error state from isError handling — don't override
+                } else {
+                    streamingState = .idle
+                }
             }
         } catch is CancellationError {
             // New task has taken over — don't touch UI state
         } catch {
-            streamingState = .error(error.localizedDescription)
+            removeEmptyPartialMessage(at: messageIndex)
+            streamingState = .error(actionableMessage(for: error))
         }
+    }
+
+    private func removeEmptyPartialMessage(at index: Int) {
+        guard index < messages.count,
+              messages[index].content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        messages.remove(at: index)
+    }
+
+    private func actionableMessage(for error: Error) -> String {
+        if let claudeError = error as? ClaudeCodeError {
+            switch claudeError {
+            case .binaryNotFound:
+                return "Claude Code CLI not found. Check the path in Settings (⌘,) or install with: npm install -g @anthropic-ai/claude-code"
+            case .processExited(let code, _):
+                return "Claude Code exited unexpectedly (code \(code)). Try again or restart the app."
+            }
+        }
+        return "Something went wrong. Please try again."
     }
 }
