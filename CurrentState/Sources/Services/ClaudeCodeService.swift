@@ -1,7 +1,7 @@
 import Foundation
 
 /// Manages Claude Code subprocess lifecycle and streams parsed events.
-final class ClaudeCodeService: Sendable {
+final class ClaudeCodeService: ClaudeCodeServiceProtocol {
 
     /// Stream events from a Claude Code subprocess.
     ///

@@ -19,6 +19,13 @@ struct MainView: View {
                                 .id(message.id)
                         }
 
+                        // Error banner
+                        if let errorMessage = appState.errorMessage {
+                            ErrorBanner(message: errorMessage) {
+                                appState.startNewBriefing()
+                            }
+                        }
+
                         // Loading indicator
                         if appState.streamingState == .loading {
                             LoadingIndicator()
@@ -27,7 +34,7 @@ struct MainView: View {
                     }
                     .padding()
                 }
-                .onChange(of: appState.messages.count) {
+                .onChange(of: appState.scrollTrigger) {
                     if let last = appState.messages.last {
                         withAnimation {
                             proxy.scrollTo(last.id, anchor: .bottom)
@@ -45,6 +52,12 @@ struct MainView: View {
             .disabled(appState.streamingState == .loading || appState.streamingState == .streaming)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+            if appState.messages.isEmpty && appState.streamingState == .idle {
+                appState.startNewBriefing()
+            }
+        }
     }
 
     private var header: some View {
@@ -65,6 +78,31 @@ struct MainView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+}
+
+struct ErrorBanner: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+
+            Text(message)
+                .font(.subheadline)
+                .lineLimit(3)
+
+            Spacer()
+
+            Button("Retry") {
+                onRetry()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
