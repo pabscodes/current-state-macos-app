@@ -17,11 +17,11 @@ targets:
         PRODUCT_NAME: Current State
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: 1
-        SWIFT_VERSION: "5.9"
-        MACOSX_DEPLOYMENT_TARGET: "14.0"
-        INFOPLIST_VALUES: >-
-          MACOSX_DEPLOYMENT_TARGET=14.0
-          LSApplicationCategoryType=public.app-category.productivity
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_CFBundleDisplayName: Current State
     entitlements:
       path: Resources/CurrentState.entitlements
       properties:
@@ -36,4 +36,8 @@ targets:
       - target: CurrentState
     settings:
       base:
-        SWIFT_VERSION: "5.9"
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Current State.app/Contents/MacOS/Current State"
+        BUNDLE_LOADER: "$(TEST_HOST)"

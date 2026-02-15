@@ -1,7 +1,7 @@
 import Foundation
 
 /// Manages Claude Code subprocess lifecycle and streams parsed events.
-final class ClaudeCodeService {
+final class ClaudeCodeService: Sendable {
 
     /// Path to the claude CLI binary.
     private let claudePath: String
@@ -11,38 +11,40 @@ final class ClaudeCodeService {
     }
 
     /// Stream events from a Claude Code subprocess.
-    ///
-    /// - Parameters:
-    ///   - prompt: The message to send (e.g., "/currentstate" or a follow-up).
-    ///   - sessionId: If provided, resumes an existing conversation.
-    /// - Returns: An `AsyncThrowingStream` of `StreamEvent`s.
     func stream(prompt: String, sessionId: String?) -> AsyncThrowingStream<StreamEvent, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
+        let resolvedPath = resolvedClaudePath()
+        let args = buildArgs(prompt: prompt, sessionId: sessionId)
+
+        return AsyncThrowingStream { continuation in
+            let task = Thread {
                 do {
-                    try await runProcess(prompt: prompt, sessionId: sessionId, continuation: continuation)
+                    try Self.runProcess(executablePath: resolvedPath, args: args, continuation: continuation)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
             }
+            task.start()
         }
     }
 
     // MARK: - Private
 
-    private func runProcess(
-        prompt: String,
-        sessionId: String?,
-        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
-    ) async throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: resolvedClaudePath())
-
+    private func buildArgs(prompt: String, sessionId: String?) -> [String] {
         var args = ["-p", prompt, "--output-format", "stream-json", "--verbose"]
         if let sessionId {
             args += ["--resume", sessionId]
         }
+        return args
+    }
+
+    private static func runProcess(
+        executablePath: String,
+        args: [String],
+        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
+    ) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = args
 
         // Unset CLAUDECODE env var to allow nested invocation
@@ -59,20 +61,16 @@ final class ClaudeCodeService {
 
         let handle = stdout.fileHandleForReading
 
-        // Read line by line from stdout
-        // Using a simple buffered approach
         var buffer = Data()
         let newline = UInt8(ascii: "\n")
 
         while process.isRunning || handle.availableData.count > 0 {
             let chunk = handle.availableData
             if chunk.isEmpty {
-                // Process ended and no more data
                 break
             }
             buffer.append(chunk)
 
-            // Extract complete lines from buffer
             while let newlineIndex = buffer.firstIndex(of: newline) {
                 let lineData = buffer[buffer.startIndex..<newlineIndex]
                 buffer = Data(buffer[buffer.index(after: newlineIndex)...])
@@ -100,7 +98,6 @@ final class ClaudeCodeService {
     }
 
     private func resolvedClaudePath() -> String {
-        // Check common installation paths
         let candidates = [
             claudePath,
             "/opt/homebrew/bin/claude",

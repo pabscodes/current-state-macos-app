@@ -1,5 +1,5 @@
 import XCTest
-@testable import CurrentState
+@testable import Current_State
 
 final class StreamParserTests: XCTestCase {
 
