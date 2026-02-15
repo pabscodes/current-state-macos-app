@@ -8,6 +8,7 @@ final class AppState: ObservableObject {
 
     private let claudeService = ClaudeCodeService()
     private let sessionStore = SessionStore()
+    private var currentTask: Task<Void, Never>?
 
     enum StreamingState: Equatable {
         case idle
@@ -22,22 +23,24 @@ final class AppState: ObservableObject {
     }
 
     func startNewBriefing() {
+        currentTask?.cancel()
         messages = []
         currentSessionId = nil
         sessionStore.clear()
         streamingState = .loading
 
-        Task {
+        currentTask = Task {
             await sendToClaudeCode(prompt: "/currentstate", isNewSession: true)
         }
     }
 
     func sendMessage(_ text: String) {
+        currentTask?.cancel()
         let userMessage = Message(role: .user, content: text)
         messages.append(userMessage)
         streamingState = .loading
 
-        Task {
+        currentTask = Task {
             await sendToClaudeCode(prompt: text, isNewSession: false)
         }
     }
@@ -75,6 +78,8 @@ final class AppState: ObservableObject {
             if streamingState != .idle {
                 streamingState = .idle
             }
+        } catch is CancellationError {
+            // New task has taken over — don't touch UI state
         } catch {
             streamingState = .error(error.localizedDescription)
         }
