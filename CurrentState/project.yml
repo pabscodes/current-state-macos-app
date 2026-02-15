@@ -1,0 +1,39 @@
+name: CurrentState
+options:
+  bundleIdPrefix: com.pabscodes
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+
+targets:
+  CurrentState:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pabscodes.currentstate
+        PRODUCT_NAME: Current State
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        INFOPLIST_VALUES: >-
+          MACOSX_DEPLOYMENT_TARGET=14.0
+          LSApplicationCategoryType=public.app-category.productivity
+    entitlements:
+      path: Resources/CurrentState.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+
+  CurrentStateTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: CurrentState
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
