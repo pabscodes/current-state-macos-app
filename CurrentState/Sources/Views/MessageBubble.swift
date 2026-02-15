@@ -28,6 +28,7 @@ struct MessageBubble: View {
         Markdown(message.content)
             .markdownTheme(.currentState)
             .textSelection(.enabled)
+            .padding(.horizontal, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
