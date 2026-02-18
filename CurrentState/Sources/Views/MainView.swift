@@ -61,11 +61,12 @@ struct MainView: View {
                 appState.sendMessage(text)
             }
             .disabled(appState.streamingState == .loading || appState.streamingState == .streaming || appState.errorMessage != nil)
+            .opacity(appState.streamingState == .loading || appState.streamingState == .streaming ? 0.5 : 1.0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .containerBackground(.ultraThinMaterial, for: .window)
         .toolbar {
-            ToolbarItem(placement: .automatic) {
+            ToolbarItem(placement: .principal) {
                 if let headerSection = appState.sections[.header] {
                     Text(headerSection.content
                         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -79,7 +80,7 @@ struct MainView: View {
                 }
             }
 
-            ToolbarItemGroup(placement: .automatic) {
+            ToolbarItemGroup(placement: .primaryAction) {
                 StatusIndicator(state: appState.streamingState)
 
                 Button(action: { appState.startNewBriefing() }) {

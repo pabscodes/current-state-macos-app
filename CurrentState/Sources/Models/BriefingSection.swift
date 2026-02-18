@@ -14,4 +14,19 @@ struct BriefingSection: Identifiable, Codable, Sendable {
         case complete
         case error(String)
     }
+
+    /// Content with the leading markdown heading stripped, to avoid duplicating
+    /// the card header title that already shows `id.displayTitle`.
+    var strippedContent: String {
+        let lines = content.components(separatedBy: "\n")
+        guard let firstIdx = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else {
+            return content
+        }
+        guard lines[firstIdx].trimmingCharacters(in: .whitespaces).hasPrefix("#") else {
+            return content
+        }
+        var remaining = lines
+        remaining.remove(at: firstIdx)
+        return remaining.joined(separator: "\n").trimmingCharacters(in: .newlines)
+    }
 }

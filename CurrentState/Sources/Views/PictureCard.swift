@@ -16,7 +16,7 @@ struct PictureCard: View {
             if isExpanded {
                 Divider()
 
-                Markdown(section.content)
+                Markdown(section.strippedContent)
                     .markdownTheme(.currentState)
                     .textSelection(.enabled)
                     .opacity(isLoading ? 0.5 : 1.0)
@@ -91,9 +91,14 @@ struct PictureCard: View {
     }
 
     private var firstNonEmptyLine: String {
-        section.content
+        section.strippedContent
             .components(separatedBy: .newlines)
-            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+            .first(where: {
+                let t = $0.trimmingCharacters(in: .whitespaces)
+                return !t.isEmpty && !t.hasPrefix("#")
+            })?
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: #"^[\*\-\•]\s*"#, with: "", options: .regularExpression)
             ?? ""
     }
 

@@ -20,30 +20,22 @@ extension Theme {
 
             // MARK: - Headings
             .heading1 { configuration in
-                VStack(alignment: .leading, spacing: 0) {
-                    configuration.label
-                        .relativePadding(.bottom, length: .em(0.3))
-                        .relativeLineSpacing(.em(0.125))
-                        .markdownTextStyle {
-                            FontWeight(.bold)
-                            FontSize(.em(1.8))
-                        }
-                    Divider()
-                }
-                .markdownMargin(top: 28, bottom: 14)
+                configuration.label
+                    .relativeLineSpacing(.em(0.125))
+                    .markdownMargin(top: 16, bottom: 10)
+                    .markdownTextStyle {
+                        FontWeight(.bold)
+                        FontSize(.em(1.3))
+                    }
             }
             .heading2 { configuration in
-                VStack(alignment: .leading, spacing: 0) {
-                    configuration.label
-                        .relativePadding(.bottom, length: .em(0.25))
-                        .relativeLineSpacing(.em(0.125))
-                        .markdownTextStyle {
-                            FontWeight(.semibold)
-                            FontSize(.em(1.4))
-                        }
-                    Divider()
-                }
-                .markdownMargin(top: 24, bottom: 12)
+                configuration.label
+                    .relativeLineSpacing(.em(0.125))
+                    .markdownMargin(top: 14, bottom: 8)
+                    .markdownTextStyle {
+                        FontWeight(.semibold)
+                        FontSize(.em(1.15))
+                    }
             }
             .heading3 { configuration in
                 configuration.label

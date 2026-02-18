@@ -13,7 +13,7 @@ struct SectionCard: View {
 
             Divider()
 
-            Markdown(section.content)
+            Markdown(section.strippedContent)
                 .markdownTheme(.currentState)
                 .textSelection(.enabled)
                 .opacity(isLoading ? 0.5 : 1.0)
