@@ -2,7 +2,7 @@ name: CurrentState
 options:
   bundleIdPrefix: com.pabscodes
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "26.0"
   xcodeVersion: "15.0"
 
 packages:

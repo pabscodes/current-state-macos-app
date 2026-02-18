@@ -27,8 +27,9 @@ enum SectionID: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 
     /// Canonical display order for the dashboard.
+    /// .header is excluded — it's handled specially by MainView.
     static let displayOrder: [SectionID] = [
-        .header, .picture, .watchList, .whatMatters,
+        .picture, .whatMatters, .watchList,
         .looseEnds, .inboxTriage, .wellbeing, .healthCheckin,
     ]
 }

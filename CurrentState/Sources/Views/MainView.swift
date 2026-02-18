@@ -95,8 +95,18 @@ struct MainView: View {
 
     private var header: some View {
         HStack {
-            Text("Current State")
-                .font(.headline)
+            // Show date/time from header section; fall back to system date
+            if let headerSection = appState.sections[.header] {
+                Text(headerSection.content
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "## ", with: ""))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(Date(), style: .date)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
