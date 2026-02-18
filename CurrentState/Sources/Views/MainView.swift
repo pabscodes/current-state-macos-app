@@ -10,13 +10,23 @@ struct MainView: View {
 
             Divider()
 
-            // Content area: messages
+            // Content area: dashboard (sections) + messages (chat)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
+                        // Section-based dashboard (if sections exist)
+                        if !appState.sections.isEmpty {
+                            DashboardView()
+                                .id("dashboard")
+                        }
+
+                        // Chat messages (passthrough content + follow-ups)
                         ForEach(appState.messages) { message in
-                            MessageBubble(message: message)
-                                .id(message.id)
+                            // Skip empty assistant messages that were just placeholders
+                            if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                MessageBubble(message: message)
+                                    .id(message.id)
+                            }
                         }
 
                         // Error banner
@@ -26,8 +36,8 @@ struct MainView: View {
                             }
                         }
 
-                        // Loading indicator
-                        if appState.streamingState == .loading {
+                        // Loading indicator (only when no sections exist yet)
+                        if appState.streamingState == .loading && appState.sections.isEmpty {
                             LoadingIndicator()
                                 .id("loading")
                         }
@@ -61,6 +71,11 @@ struct MainView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+
+            // Load cached sections first (instant)
+            await appState.loadCachedBriefing()
+
+            // Then start a fresh briefing in background
             let autoGenerate = UserDefaults.standard.bool(forKey: "currentstate.autoGenerate")
             if autoGenerate && appState.messages.isEmpty && appState.streamingState == .idle {
                 appState.startNewBriefing()
@@ -72,7 +87,7 @@ struct MainView: View {
         if appState.streamingState == .loading || appState.streamingState == .streaming {
             return "Generating..."
         }
-        if appState.messages.contains(where: { $0.role == .assistant && !$0.content.isEmpty }) {
+        if !appState.sections.isEmpty || appState.messages.contains(where: { $0.role == .assistant && !$0.content.isEmpty }) {
             return "Ask a follow-up..."
         }
         return "Type a message..."

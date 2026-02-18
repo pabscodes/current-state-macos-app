@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("currentstate.claudePath") private var claudePath = ""
-    @AppStorage("currentstate.startupSkill") private var startupSkill = "/currentstate"
+    @AppStorage("currentstate.startupSkill") private var startupSkill = "/currentstate-app"
     @AppStorage("currentstate.autoGenerate") private var autoGenerate = true
 
     var body: some View {
