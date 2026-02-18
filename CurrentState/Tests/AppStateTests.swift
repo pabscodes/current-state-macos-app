@@ -23,6 +23,10 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "session-1", fullText: "Hello", isError: false, durationMs: 100, costUsd: 0.01)),
         ]
 
+        // Set the startup skill explicitly so the test doesn't depend on UserDefaults state
+        UserDefaults.standard.set("/currentstate-app", forKey: "currentstate.startupSkill")
+        defer { UserDefaults.standard.removeObject(forKey: "currentstate.startupSkill") }
+
         let appState = AppState(claudeService: mock)
         appState.startNewBriefing()
 
@@ -32,12 +36,12 @@ final class AppStateTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(mock.callCount, 1)
-        XCTAssertEqual(mock.lastPrompt, "/currentstate")
+        XCTAssertEqual(mock.lastPrompt, "/currentstate-app")
         XCTAssertNil(mock.lastSessionId, "First briefing should not pass a session ID")
         XCTAssertEqual(appState.currentSessionId, "session-1")
         XCTAssertEqual(appState.streamingState, .idle)
 
-        // Should have one assistant message with accumulated text
+        // Should have one assistant message with accumulated text (passthrough, no delimiters)
         let assistantMessages = appState.messages.filter { $0.role == .assistant }
         XCTAssertEqual(assistantMessages.count, 1)
         XCTAssertEqual(assistantMessages.first?.content, "Hello")
@@ -103,6 +107,9 @@ final class AppStateTests: XCTestCase {
             ],
         ]
 
+        UserDefaults.standard.set("/currentstate-app", forKey: "currentstate.startupSkill")
+        defer { UserDefaults.standard.removeObject(forKey: "currentstate.startupSkill") }
+
         let appState = AppState(claudeService: mock)
         appState.startNewBriefing()
 
@@ -115,7 +122,7 @@ final class AppStateTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(mock.callCount, 2)
-        XCTAssertEqual(mock.allPrompts, ["/currentstate", "follow-up"])
+        XCTAssertEqual(mock.allPrompts, ["/currentstate-app", "follow-up"])
         XCTAssertEqual(mock.allSessionIds.count, 2)
         XCTAssertNil(mock.allSessionIds[0], "First call should have nil sessionId")
         XCTAssertEqual(mock.allSessionIds[1], "s1", "Second call should pass session ID from init event")
@@ -335,6 +342,8 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(appState.messages.isEmpty, "Messages should be empty after clear")
         XCTAssertNil(appState.currentSessionId, "Session should be nil after clear")
         XCTAssertEqual(appState.streamingState, .idle, "State should be idle after clear")
+        XCTAssertTrue(appState.sections.isEmpty, "Sections should be empty after clear")
+        XCTAssertFalse(appState.hasCachedBriefing, "hasCachedBriefing should be false after clear")
     }
 
     // MARK: - Custom Startup Skill
@@ -357,5 +366,156 @@ final class AppStateTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(mock.lastPrompt, "/mycustomskill", "Should use custom startup skill from UserDefaults")
+    }
+
+    // MARK: - Section-Based Briefing (NEW)
+
+    func testSectionDelimitersPopulateSections() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("<<<SECTION:header>>>\n## Monday, Feb 17\n<<</SECTION:header>>>\n<<<SECTION:picture>>>\n### The Picture\n- Bullet one\n<<</SECTION:picture>>>"),
+            .result(.init(sessionId: "s1", fullText: "", isError: false, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(appState.sections.count, 2, "Should have 2 sections")
+        XCTAssertNotNil(appState.sections[.header])
+        XCTAssertNotNil(appState.sections[.picture])
+        XCTAssertTrue(appState.sections[.header]?.content.contains("Monday") ?? false)
+        XCTAssertTrue(appState.sections[.picture]?.content.contains("Bullet one") ?? false)
+        XCTAssertEqual(appState.sections[.header]?.loadingState, .complete)
+        XCTAssertEqual(appState.sections[.picture]?.loadingState, .complete)
+    }
+
+    func testBackwardCompatWithoutDelimiters() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("Plain briefing without delimiters"),
+            .result(.init(sessionId: "s1", fullText: "Plain briefing without delimiters", isError: false, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        // No sections populated — content goes to messages via passthrough
+        XCTAssertTrue(appState.sections.isEmpty, "No sections should exist without delimiters")
+        let assistantMessages = appState.messages.filter { $0.role == .assistant }
+        XCTAssertEqual(assistantMessages.count, 1)
+        XCTAssertEqual(assistantMessages.first?.content, "Plain briefing without delimiters")
+    }
+
+    func testLoadCachedBriefing() async {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cache = BriefingCache(directory: tempDir)
+
+        // Seed cache data
+        var briefing = CachedBriefing.empty
+        briefing.sessionId = "cached-session"
+        briefing.sections[.picture] = CachedBriefing.SectionCache(
+            content: "### Cached Picture", lastUpdated: Date()
+        )
+        await cache.save(briefing)
+
+        let mock = MockClaudeCodeService()
+        let appState = AppState(claudeService: mock, briefingCache: cache)
+
+        await appState.loadCachedBriefing()
+
+        XCTAssertTrue(appState.hasCachedBriefing)
+        XCTAssertEqual(appState.sections.count, 1)
+        XCTAssertEqual(appState.sections[.picture]?.content, "### Cached Picture")
+        XCTAssertEqual(appState.sections[.picture]?.loadingState, .cached)
+        XCTAssertEqual(appState.currentSessionId, "cached-session")
+    }
+
+    func testNewBriefingMarksCachedSectionsAsRefreshing() async {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cache = BriefingCache(directory: tempDir)
+        var briefing = CachedBriefing.empty
+        briefing.sections[.picture] = CachedBriefing.SectionCache(
+            content: "Old content", lastUpdated: Date()
+        )
+        await cache.save(briefing)
+
+        let mock = MockClaudeCodeService()
+        // Return nothing so startNewBriefing stays in loading
+        mock.eventsToReturn = []
+
+        let appState = AppState(claudeService: mock, briefingCache: cache)
+        await appState.loadCachedBriefing()
+
+        XCTAssertEqual(appState.sections[.picture]?.loadingState, .cached)
+
+        appState.startNewBriefing()
+
+        // Before the stream completes, cached sections should be marked refreshing
+        XCTAssertEqual(appState.sections[.picture]?.loadingState, .refreshing)
+        // But content is still visible
+        XCTAssertEqual(appState.sections[.picture]?.content, "Old content")
+    }
+
+    func testSectionsPersistAfterCompletion() async {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let cache = BriefingCache(directory: tempDir)
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("<<<SECTION:picture>>>\n### New Picture\n<<</SECTION:picture>>>"),
+            .result(.init(sessionId: "s1", fullText: "", isError: false, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock, briefingCache: cache)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        // Verify the cache was written
+        let loaded = await cache.load()
+        XCTAssertFalse(loaded.isEmpty, "Cache should have been persisted after briefing completion")
+        XCTAssertEqual(loaded.sections[.picture]?.content, "### New Picture")
+        XCTAssertEqual(loaded.sessionId, "s1")
+    }
+
+    func testClearConversationResetsSections() async {
+        let mock = MockClaudeCodeService()
+        mock.eventsToReturn = [
+            .init_(.init(sessionId: "s1", model: "m")),
+            .assistantText("<<<SECTION:header>>>\n## Monday\n<<</SECTION:header>>>"),
+            .result(.init(sessionId: "s1", fullText: "", isError: false, durationMs: nil, costUsd: nil)),
+        ]
+
+        let appState = AppState(claudeService: mock)
+        appState.startNewBriefing()
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertFalse(appState.sections.isEmpty)
+
+        appState.clearConversation()
+
+        XCTAssertTrue(appState.sections.isEmpty, "Sections should be cleared")
+        XCTAssertFalse(appState.hasCachedBriefing, "hasCachedBriefing should be reset")
+        XCTAssertTrue(appState.refreshingSectionIds.isEmpty, "refreshingSectionIds should be empty")
     }
 }
