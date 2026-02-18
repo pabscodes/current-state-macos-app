@@ -28,7 +28,7 @@ struct PictureCard: View {
                 }
             }
         }
-        .glassEffect(in: RoundedRectangle(cornerRadius: 12))
+        .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var headerRow: some View {
@@ -51,7 +51,7 @@ struct PictureCard: View {
             Spacer()
 
             Text(section.lastUpdated, style: .time)
-                .font(.caption)
+                .font(.caption.italic())
                 .foregroundStyle(.secondary)
 
             if isLoading {
@@ -63,7 +63,7 @@ struct PictureCard: View {
                     Image(systemName: "arrow.clockwise")
                         .font(.caption)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.glass)
             }
         }
         .padding(.horizontal, 14)

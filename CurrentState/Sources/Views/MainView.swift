@@ -5,11 +5,6 @@ struct MainView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            header
-
-            Divider()
-
             // Content area: dashboard (sections) + messages (chat)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -44,6 +39,7 @@ struct MainView: View {
                     }
                     .padding()
                 }
+                .scrollEdgeEffectStyle(.soft, for: .top)
                 .onChange(of: appState.scrollTrigger) {
                     if let last = appState.messages.last {
                         withAnimation {
@@ -60,8 +56,6 @@ struct MainView: View {
                 }
             }
 
-            Divider()
-
             // Input bar
             InputBar(placeholder: inputPlaceholder) { text in
                 appState.sendMessage(text)
@@ -69,6 +63,38 @@ struct MainView: View {
             .disabled(appState.streamingState == .loading || appState.streamingState == .streaming || appState.errorMessage != nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .containerBackground(.ultraThinMaterial, for: .window)
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                if let headerSection = appState.sections[.header] {
+                    Text(headerSection.content
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .replacingOccurrences(of: "## ", with: ""))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(Date(), style: .date)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ToolbarItemGroup(placement: .automatic) {
+                StatusIndicator(state: appState.streamingState)
+
+                Button(action: { appState.startNewBriefing() }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.glass)
+                .help("New Briefing (⌘N)")
+
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.glass)
+                .help("Settings (⌘,)")
+            }
+        }
         .task {
             guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
 
@@ -93,41 +119,6 @@ struct MainView: View {
         return "Type a message..."
     }
 
-    private var header: some View {
-        HStack {
-            // Show date/time from header section; fall back to system date
-            if let headerSection = appState.sections[.header] {
-                Text(headerSection.content
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "## ", with: ""))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(Date(), style: .date)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            // Status indicator
-            StatusIndicator(state: appState.streamingState)
-
-            Button(action: { appState.startNewBriefing() }) {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .help("New Briefing (⌘N)")
-
-            SettingsLink {
-                Image(systemName: "gearshape")
-            }
-            .buttonStyle(.borderless)
-            .help("Settings (⌘,)")
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-    }
 }
 
 struct ErrorBanner: View {

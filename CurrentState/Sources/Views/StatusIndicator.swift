@@ -13,6 +13,9 @@ struct StatusIndicator: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .glassEffect(.regular.tint(color), in: Capsule())
     }
 
     private var color: Color {

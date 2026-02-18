@@ -26,10 +26,13 @@ struct InputBar: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.glassProminent)
             .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(12)
+        .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .onAppear {
             isFocused = true
         }
