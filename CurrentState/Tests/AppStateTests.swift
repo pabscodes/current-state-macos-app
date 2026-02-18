@@ -4,11 +4,35 @@ import XCTest
 @MainActor
 final class AppStateTests: XCTestCase {
 
+    // MARK: - Test Isolation
+
+    /// Temporary directory used for BriefingCache in all tests that don't specify their own.
+    /// Prevents tests from writing to the real ~/Library/Application Support/CurrentState/ cache.
+    private var tempCacheDir: URL!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        tempCacheDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempCacheDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: tempCacheDir)
+        tempCacheDir = nil
+        try await super.tearDown()
+    }
+
+    /// Creates an AppState backed by the isolated temp-dir cache.
+    private func makeAppState(claudeService: MockClaudeCodeService) -> AppState {
+        AppState(claudeService: claudeService, briefingCache: BriefingCache(directory: tempCacheDir))
+    }
+
     // MARK: - Init Safety
 
     func testInitDoesNotAutoStart() {
         let mock = MockClaudeCodeService()
-        _ = AppState(claudeService: mock)
+        _ = makeAppState(claudeService: mock)
 
         XCTAssertEqual(mock.callCount, 0, "AppState.init() must not call the service")
     }
@@ -27,7 +51,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.set("/currentstate-app", forKey: "currentstate.startupSkill")
         defer { UserDefaults.standard.removeObject(forKey: "currentstate.startupSkill") }
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         // Wait for the internal Task to complete
@@ -53,7 +77,7 @@ final class AppStateTests: XCTestCase {
         let mock = MockClaudeCodeService()
         mock.errorToThrow = ClaudeCodeError.binaryNotFound
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -77,7 +101,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "chunk1chunk2", isError: false, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         let initialTrigger = appState.scrollTrigger
 
         appState.startNewBriefing()
@@ -110,7 +134,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.set("/currentstate-app", forKey: "currentstate.startupSkill")
         defer { UserDefaults.standard.removeObject(forKey: "currentstate.startupSkill") }
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -143,7 +167,7 @@ final class AppStateTests: XCTestCase {
             ],
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -183,7 +207,7 @@ final class AppStateTests: XCTestCase {
             ],
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
 
         // First briefing
         appState.startNewBriefing()
@@ -213,7 +237,7 @@ final class AppStateTests: XCTestCase {
 
     func testErrorMessageComputedProperty() {
         let mock = MockClaudeCodeService()
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
 
         // Idle state → nil
         XCTAssertNil(appState.errorMessage)
@@ -237,7 +261,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "", isError: true, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -257,7 +281,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "", isError: true, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -275,7 +299,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "", isError: true, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -290,7 +314,7 @@ final class AppStateTests: XCTestCase {
         let mock = MockClaudeCodeService()
         mock.errorToThrow = ClaudeCodeError.processExited(code: 1, message: "fail")
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -304,7 +328,7 @@ final class AppStateTests: XCTestCase {
         let mock = MockClaudeCodeService()
         mock.errorToThrow = ClaudeCodeError.binaryNotFound
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -328,7 +352,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "Hello", isError: false, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -359,7 +383,7 @@ final class AppStateTests: XCTestCase {
         UserDefaults.standard.set("/mycustomskill", forKey: "currentstate.startupSkill")
         defer { UserDefaults.standard.removeObject(forKey: "currentstate.startupSkill") }
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -378,7 +402,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "", isError: false, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -401,7 +425,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "Plain briefing without delimiters", isError: false, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
@@ -504,7 +528,7 @@ final class AppStateTests: XCTestCase {
             .result(.init(sessionId: "s1", fullText: "", isError: false, durationMs: nil, costUsd: nil)),
         ]
 
-        let appState = AppState(claudeService: mock)
+        let appState = makeAppState(claudeService: mock)
         appState.startNewBriefing()
 
         await Task.yield()
