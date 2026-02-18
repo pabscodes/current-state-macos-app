@@ -22,9 +22,20 @@ final class ClaudeCodeService: ClaudeCodeServiceProtocol {
                 process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
                 process.standardInput = FileHandle.nullDevice
 
-                // Strip CLAUDECODE env var to prevent "nested session" error
+                // Strip CLAUDECODE env var to prevent "nested session" error.
+                // Augment PATH so claude's subagents can find homebrew tools
+                // (things, python3.12, etc.) — macOS apps launch with a minimal PATH.
                 var env = ProcessInfo.processInfo.environment
                 env.removeValue(forKey: "CLAUDECODE")
+                let home = FileManager.default.homeDirectoryForCurrentUser.path
+                let extraPaths = [
+                    "\(home)/.local/bin",
+                    "/opt/homebrew/bin",
+                    "/opt/homebrew/sbin",
+                    "/usr/local/bin",
+                ]
+                let existingPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+                env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
                 process.environment = env
 
                 let stdout = Pipe()
