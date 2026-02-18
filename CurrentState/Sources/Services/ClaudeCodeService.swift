@@ -123,7 +123,7 @@ final class ClaudeCodeService: ClaudeCodeServiceProtocol {
     // MARK: - Private
 
     private func buildArgs(prompt: String, sessionId: String?) -> [String] {
-        var args = ["-p", prompt, "--output-format", "stream-json", "--verbose"]
+        var args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"]
         if let sessionId {
             args += ["--resume", sessionId]
         }

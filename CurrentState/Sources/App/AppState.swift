@@ -304,9 +304,13 @@ final class AppState: ObservableObject {
                 )
 
             case .passthrough(let text):
-                // No delimiters — append to the flat message (backward compat with /currentstate)
-                if messageIndex < messages.count {
+                // No delimiters — only show in messages when NOT in section mode.
+                // In section mode, passthrough is the main agent's internal reasoning
+                // (e.g. "Still gathering data...") which should never be shown to the user.
+                if sections.isEmpty, messageIndex < messages.count {
                     messages[messageIndex].content += text
+                } else {
+                    Self.logger.debug("Suppressing passthrough in section mode: \(text.prefix(80), privacy: .private)")
                 }
             }
         }
