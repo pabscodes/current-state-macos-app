@@ -6,7 +6,7 @@ struct CurrentStateApp: App {
 
     init() {
         UserDefaults.standard.register(defaults: [
-            "currentstate.startupSkill": "/currentstate",
+            "currentstate.startupSkill": "/currentstate-app",
             "currentstate.autoGenerate": true,
         ])
     }

@@ -12,33 +12,75 @@ See `docs/ARCHITECTURE.md` for the full design. Key points:
 - **Conversation continuity**: First call returns a `session_id`, subsequent calls use `--resume <id>`
 - **Event filtering**: Only `assistant` type events rendered. `tool_use`, `tool_result`, etc. are hidden.
 - **Stream format**: Documented in `docs/STREAM_FORMAT.md` from live testing on 2026-02-15.
+- **Section-based rendering**: The `/currentstate-app` skill wraps each briefing section with `<<<SECTION:id>>>` delimiters. The app parses these into independent, cacheable section cards.
+
+## Section Delimiter Protocol
+
+The app uses a custom delimiter protocol for section-based rendering:
+```
+<<<SECTION:picture>>>
+### The Picture
+- Bullet content...
+<<</SECTION:picture>>>
+```
+
+**Section IDs:** `header`, `picture`, `watch_list`, `what_matters`, `loose_ends`, `inbox_triage`, `wellbeing`, `health_checkin`
+
+- Delimiters on their own lines, content between is pure markdown
+- Empty sections are omitted (no delimiters emitted)
+- `SectionStreamParser` handles delimiters split across stream chunks
+- Streams without delimiters fall through as passthrough (backward compat with `/currentstate`)
 
 ## Project Structure
 
 ```
 CurrentState/
-├── project.yml                    # XcodeGen spec → generates .xcodeproj
+├── project.yml                        # XcodeGen spec → generates .xcodeproj
 ├── Sources/
 │   ├── App/
-│   │   ├── CurrentStateApp.swift  # @main entry point, window config
-│   │   └── AppState.swift         # @MainActor state machine driving the UI
+│   │   ├── CurrentStateApp.swift      # @main entry point, window config
+│   │   └── AppState.swift             # @MainActor state machine — sections, cache, streaming
 │   ├── Models/
-│   │   ├── Message.swift          # Chat message (role, content, timestamp)
-│   │   └── StreamEvent.swift      # Parsed stream events (init, assistant, result)
+│   │   ├── Message.swift              # Chat message (role, content, timestamp)
+│   │   ├── StreamEvent.swift          # Parsed stream events (init, assistant, result)
+│   │   ├── SectionID.swift            # Section identifier enum with display order
+│   │   ├── BriefingSection.swift      # Per-section data model with loading states
+│   │   ├── CachedBriefing.swift       # JSON-serializable cache root object
+│   │   └── UserAction.swift           # Action → affected sections mapping
 │   ├── Services/
-│   │   ├── ClaudeCodeService.swift # Subprocess lifecycle + async stream
-│   │   ├── StreamParser.swift      # NDJSON line parser
-│   │   └── SessionStore.swift      # UserDefaults session persistence
+│   │   ├── ClaudeCodeService.swift    # Subprocess lifecycle + async stream
+│   │   ├── ClaudeCodeServiceProtocol.swift # Protocol for DI/testing
+│   │   ├── StreamParser.swift         # NDJSON line parser
+│   │   ├── SectionStreamParser.swift  # Delimiter parser (chunk-boundary safe)
+│   │   ├── BriefingCache.swift        # Actor — file-based section cache
+│   │   └── SessionStore.swift         # UserDefaults session persistence
 │   └── Views/
-│       ├── MainView.swift          # Container: header + messages + input
-│       ├── MessageBubble.swift     # User/assistant message rendering
-│       ├── InputBar.swift          # Text input + send button
-│       └── StatusIndicator.swift   # Streaming state dot
+│       ├── MainView.swift             # Dashboard + chat dual layout
+│       ├── DashboardView.swift        # Section card container in display order
+│       ├── SectionCard.swift          # Individual section with refresh overlay
+│       ├── MessageBubble.swift        # User/assistant message rendering
+│       ├── InputBar.swift             # Text input + send button
+│       ├── StatusIndicator.swift      # Streaming state dot
+│       ├── SettingsView.swift         # CLI path, startup skill, auto-generate
+│       └── MarkdownTheme+CurrentState.swift # Custom markdown styling
 ├── Tests/
-│   └── StreamParserTests.swift     # 10 tests against real captured output
+│   ├── StreamParserTests.swift        # 11 tests against real captured output
+│   ├── SectionStreamParserTests.swift # 12 tests — chunk splitting, delimiters, flush
+│   ├── BriefingCacheTests.swift       # 5 tests — save/load/update/clear
+│   ├── AppStateTests.swift            # 22 tests — state machine + sections + cache
+│   └── MockClaudeCodeService.swift    # Test mock for async streaming
 └── Resources/
-    └── CurrentState.entitlements   # Sandbox disabled (needs subprocess access)
+    └── CurrentState.entitlements      # Sandbox disabled (needs subprocess access)
 ```
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `/currentstate` | Original CLI briefing — no delimiters, untouched |
+| `/currentstate-app` | App-specific briefing — section delimiters, per-section refresh, "Wellbeing" rename |
+
+The app defaults to `/currentstate-app`. Changing the startup skill to `/currentstate` in Settings falls back to flat-message rendering (backward compat).
 
 ## Build
 
@@ -56,21 +98,33 @@ Requires: macOS 14.0+, Xcode 15+, Claude Code CLI installed and authenticated.
 ### Done
 - [x] Project scaffold with all source files
 - [x] Documentation (ARCHITECTURE, STREAM_FORMAT, UX_FLOW)
-- [x] StreamParser with event filtering
+- [x] StreamParser with event filtering (11 tests)
 - [x] ClaudeCodeService with async streaming
-- [x] AppState state machine
-- [x] All SwiftUI views (Main, MessageBubble, InputBar, StatusIndicator)
-- [x] StreamParserTests (10 test cases with real data)
+- [x] AppState state machine (22 tests)
+- [x] All SwiftUI views (Main, Dashboard, SectionCard, MessageBubble, InputBar, StatusIndicator)
 - [x] XcodeGen project spec
 - [x] GitHub repo: https://github.com/pabscodes/current-state-macos-app
+- [x] **PRD 1: Section-based execution & caching**
+  - [x] Data models (SectionID, BriefingSection, CachedBriefing, UserAction)
+  - [x] SectionStreamParser with 12 test cases
+  - [x] BriefingCache actor with 5 test cases
+  - [x] AppState refactor — sections, cache loading, per-section refresh, smart refresh
+  - [x] `/currentstate-app` skill — delimiters verified in production (2026-02-17)
+  - [x] View layer — DashboardView, SectionCard with context menu refresh
+  - [x] Smart refresh wiring — keyword detection → affected section refresh
+  - [x] 49 total tests passing, 0 failures
 
-### Next (PR order)
-- [ ] **PR 1**: Get compiling + parser tests green in Xcode
-- [ ] **PR 2**: ClaudeCodeService actually spawns subprocess and streams
-- [ ] **PR 3**: Wire service → views, render first real briefing
-- [ ] **PR 4**: Chat follow-up with `--resume`
-- [ ] **PR 5**: Markdown rendering polish
-- [ ] **PR 6**: Error handling, settings, keyboard shortcuts
+### Key UX Behaviors
+- **Instant-on**: Cached sections load from `~/Library/Application Support/CurrentState/briefing-cache.json` on launch
+- **Background refresh**: New briefing streams in background; cached sections show "refreshing" overlay
+- **Per-section refresh**: Right-click any section card → "Refresh This Section"
+- **Smart refresh**: After chat messages ("done", "skip", "schedule"), affected sections auto-refresh
+- **Backward compat**: Streams without delimiters render as flat messages
+
+### Next
+- [ ] Integration testing — full app with live briefing
+- [ ] Liquid Glass design pass (macOS 26)
+- [ ] Performance tuning — briefing currently takes ~5 min
 
 ## Key Decisions
 
@@ -82,6 +136,9 @@ Requires: macOS 14.0+, Xcode 15+, Claude Code CLI installed and authenticated.
 | Sandbox | Disabled | Must spawn `claude` subprocess — can't sandbox |
 | Design | Apple Liquid Glass (macOS 26) | Native feel, modern, aligns with latest Apple HIG |
 | Deployment target | macOS 14.0 (Sonoma) | Broad compatibility, may bump to 26 for Liquid Glass |
+| Section rendering | Single subprocess + delimiters | Simpler than multiple subprocesses; skill parallelizes internally |
+| Skill strategy | New `/currentstate-app`, original untouched | Safety-first — CLI usage unaffected |
+| Cache location | `~/Library/Application Support/CurrentState/` | Standard macOS app data location |
 
 ## Important Notes
 
@@ -89,4 +146,6 @@ Requires: macOS 14.0+, Xcode 15+, Claude Code CLI installed and authenticated.
 - `--verbose` flag is required when using `--output-format stream-json` in print mode
 - Stream events: `system` (init) → N × `assistant`/`tool_use`/`tool_result` → `result`
 - Only render `type: "assistant"` events where `content` contains `type: "text"` blocks
-- The briefing takes 30-90 seconds to generate (many parallel tool calls under the hood)
+- The briefing takes ~5 minutes to generate (subagent with many parallel tool calls)
+- All text routes through `SectionStreamParser` — never append directly to messages
+- "Context" section renamed to "Wellbeing" in `/currentstate-app` (section ID: `wellbeing`)
